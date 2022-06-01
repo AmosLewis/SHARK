@@ -131,35 +131,8 @@ def get_iree_frontend_args(frontend):
         return []
 
 
-# input_type should be "mhlo", "tosa" for linalg no need to mention the frontend.
-def get_iree_module(module, device, input_type, args, func_name):
-    flatbuffer_blob = None
-    # Compile according to the input type, else just try compiling.
-    if input_type in ["mhlo", "tosa"]:
-        flatbuffer_blob = ireec.compile_str(
-            str(module),
-            target_backends=[IREE_DEVICE_MAP[device]],
-            extra_args=args,
-            input_type=input_type)
-    else:
-        flatbuffer_blob = ireec.compile_str(
-            str(module),
-            target_backends=[IREE_DEVICE_MAP[device]],
-            extra_args=args)
-
-    vm_module = ireert.VmModule.from_flatbuffer(flatbuffer_blob)
-    config = ireert.Config(IREE_DEVICE_MAP[device])
-    ctx = ireert.SystemContext(config=config)
-    ctx.add_vm_module(vm_module)
-    ModuleCompiled = ctx.modules.module[func_name]
-    return ModuleCompiled, config
-
-
-def get_iree_compiled_module(module,
-                             device: str,
-                             frontend: str = "torch",
-                             func_name: str = "forward"):
-    """Given a module returns the compiled .vmfb and configs"""
+def compile_module_to_flatbuffer(module, device, frontend, func_name):
+    # Setup Compile arguments wrt to frontends.
     input_type = ""
     args = get_iree_frontend_args(frontend)
     args += get_iree_device_args(device)
@@ -173,14 +146,47 @@ def get_iree_compiled_module(module,
         input_type = "mhlo"
     elif frontend in ["tosa"]:
         input_type = "tosa"
+    # Compile according to the input type, else just try compiling.
+    flatbuffer_blob = None
+    if input_type in ["mhlo", "tosa"]:
+        flatbuffer_blob = ireec.compile_str(
+            module,
+            target_backends=[IREE_DEVICE_MAP[device]],
+            extra_args=args,
+            input_type=input_type)
+    else:
+        flatbuffer_blob = ireec.compile_str(
+            str(module),
+            target_backends=[IREE_DEVICE_MAP[device]],
+            extra_args=args)
+    return flatbuffer_blob
 
-    return get_iree_module(module, device, input_type, args, func_name)
+# input_type should be "mhlo", "tosa" for linalg no need to mention the frontend.
+def get_iree_module(flatbuffer_blob, device, func_name):
+    vm_module = ireert.VmModule.from_flatbuffer(flatbuffer_blob)
+    config = ireert.Config(IREE_DEVICE_MAP[device])
+    ctx = ireert.SystemContext(config=config)
+    ctx.add_vm_module(vm_module)
+    ModuleCompiled = ctx.modules.module[func_name]
+    return ModuleCompiled, config
 
 
-def export_iree_module_to_vmfb(module, device: str, directory: str):
+def get_iree_compiled_module(module,
+                             device: str,
+                             frontend: str = "torch",
+                             func_name: str = "forward"):
+    """Given a module returns the compiled .vmfb and configs"""
+    flatbuffer_blob = compile_module_to_flatbuffer(module, device, frontend, func_name)
+    return get_iree_module(flatbuffer_blob, device, func_name)
+
+
+def export_iree_module_to_vmfb(module,
+                             device: str,
+                             directory: str,
+                             frontend: str = "torch",
+                             func_name: str = "forward"):
+    flatbuffer_blob = compile_module_to_flatbuffer(module, device, frontend, func_name)
     module_name = get_module_name_for_asm_dump(module)
-    flatbuffer_blob = ireec.compile_str(
-        str(module), target_backends=[IREE_DEVICE_MAP[device]])
     filename = os.path.join(directory, module_name + ".vmfb")
     with open(filename, 'wb') as f:
         f.write(flatbuffer_blob)
