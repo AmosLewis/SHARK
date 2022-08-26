@@ -19,6 +19,8 @@ import subprocess as sp
 import hashlib
 import numpy as np
 from pathlib import Path
+import faulthandler
+faulthandler.enable()
 
 visible_default = tf.config.list_physical_devices("GPU")
 try:
@@ -239,11 +241,11 @@ if __name__ == "__main__":
     if args.torch_model_csv:
         save_torch_model(args.torch_model_csv)
 
-    if args.tf_model_csv:
-        save_tf_model(args.tf_model_csv)
-
-    if args.tflite_model_csv:
-        save_tflite_model(args.tflite_model_csv)
+    # if args.tf_model_csv:
+    #     save_tf_model(args.tf_model_csv)
+    #
+    # if args.tflite_model_csv:
+    #     save_tflite_model(args.tflite_model_csv)
 
     if args.upload:
         git_hash = sp.getoutput("git log -1 --format='%h'") + "/"

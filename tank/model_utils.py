@@ -1,9 +1,7 @@
-from shark.shark_inference import SharkInference
-from shark.parser import shark_args
-
 import torch
 import numpy as np
-import sys
+from torch.fx.experimental.proxy_tensor import make_fx
+from torch._decomp import get_decompositions
 
 torch.manual_seed(0)
 
@@ -80,7 +78,6 @@ def get_hf_img_cls_model(name):
 
 ##################### Hugging Face LM Models ###################################
 
-
 class HuggingFaceLanguage(torch.nn.Module):
     def __init__(self, hf_model_name):
         super().__init__()
@@ -111,8 +108,47 @@ def get_hf_model(name):
     # TODO: Currently the test input is set to (1,128)
     test_input = torch.randint(2, (1, 128))
     actual_out = model(test_input)
-    return model, test_input, actual_out
 
+    def model_inference(input):
+        return model(input)
+
+    fx_g = make_fx(
+        model_inference,
+        decomposition_table=get_decompositions(
+            [
+                torch.ops.aten.embedding_dense_backward,
+                torch.ops.aten.native_layer_norm_backward,
+                torch.ops.aten.slice_backward,
+                torch.ops.aten.select_backward,
+                torch.ops.aten.norm.ScalarOpt_dim,
+                torch.ops.aten.native_group_norm,
+                torch.ops.aten.upsample_bilinear2d.vec,
+                torch.ops.aten.split.Tensor,
+                torch.ops.aten.split_with_sizes,
+            ]
+        ),
+    )(test_input)
+    return fx_g, test_input, actual_out
+# Traceback (most recent call last):
+#   File "/home/chi/src/ubuntu20/shark/SHARK/generate_sharktank.py", line 231, in <module>
+#     save_torch_model(args.torch_model_csv)
+#   File "/home/chi/src/ubuntu20/shark/SHARK/generate_sharktank.py", line 83, in save_torch_model
+#     mlir_importer.import_debug(
+#   File "/home/chi/src/ubuntu20/shark/SHARK/shark/shark_importer.py", line 163, in import_debug
+#     imported_mlir = self.import_mlir(
+#   File "/home/chi/src/ubuntu20/shark/SHARK/shark/shark_importer.py", line 109, in import_mlir
+#     return self._torch_mlir(is_dynamic, tracing_required), func_name
+#   File "/home/chi/src/ubuntu20/shark/SHARK/shark/shark_importer.py", line 74, in _torch_mlir
+#     return get_torch_mlir_module(
+#   File "/home/chi/src/ubuntu20/shark/SHARK/shark/torch_mlir_utils.py", line 69, in get_torch_mlir_module
+#     module = torch_mlir.compile(
+#   File "/home/chi/src/ubuntu20/shark/torch-mlir/build/tools/torch-mlir/python_packages/torch_mlir/torch_mlir/__init__.py", line 233, in compile
+#     raise Exception(f"""
+# Exception:
+# PyTorch TorchScript module -> torch-mlir Object Graph IR import failed with:
+# ### Importer C++ Exception:
+# required keyword attribute 'starts' is undefined
+# ### Importer Diagnostics:
 
 ################################################################################
 
