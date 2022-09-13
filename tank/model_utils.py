@@ -109,47 +109,36 @@ def get_hf_model(name):
     test_input = torch.randint(2, (1, 128))
     actual_out = model(test_input)
 
-    def model_inference(input):
-        return model(input)
-
     fx_g = make_fx(
-        model_inference,
+        model,
         decomposition_table=get_decompositions(
             [
-                torch.ops.aten.embedding_dense_backward,
-                torch.ops.aten.native_layer_norm_backward,
-                torch.ops.aten.slice_backward,
-                torch.ops.aten.select_backward,
-                torch.ops.aten.norm.ScalarOpt_dim,
-                torch.ops.aten.native_group_norm,
-                torch.ops.aten.upsample_bilinear2d.vec,
                 torch.ops.aten.split.Tensor,
                 torch.ops.aten.split_with_sizes,
             ]
         ),
-    )(test_input)
-    return fx_g, test_input, actual_out
-# Traceback (most recent call last):
-#   File "/home/chi/src/ubuntu20/shark/SHARK/generate_sharktank.py", line 231, in <module>
-#     save_torch_model(args.torch_model_csv)
-#   File "/home/chi/src/ubuntu20/shark/SHARK/generate_sharktank.py", line 83, in save_torch_model
-#     mlir_importer.import_debug(
-#   File "/home/chi/src/ubuntu20/shark/SHARK/shark/shark_importer.py", line 163, in import_debug
-#     imported_mlir = self.import_mlir(
-#   File "/home/chi/src/ubuntu20/shark/SHARK/shark/shark_importer.py", line 109, in import_mlir
-#     return self._torch_mlir(is_dynamic, tracing_required), func_name
-#   File "/home/chi/src/ubuntu20/shark/SHARK/shark/shark_importer.py", line 74, in _torch_mlir
-#     return get_torch_mlir_module(
-#   File "/home/chi/src/ubuntu20/shark/SHARK/shark/torch_mlir_utils.py", line 69, in get_torch_mlir_module
-#     module = torch_mlir.compile(
-#   File "/home/chi/src/ubuntu20/shark/torch-mlir/build/tools/torch-mlir/python_packages/torch_mlir/torch_mlir/__init__.py", line 233, in compile
-#     raise Exception(f"""
-# Exception:
-# PyTorch TorchScript module -> torch-mlir Object Graph IR import failed with:
-# ### Importer C++ Exception:
-# required keyword attribute 'starts' is undefined
-# ### Importer Diagnostics:
+    )(
+        test_input
+    )
+    fx_g.graph.set_codegen(torch.fx.graph.CodeGen())
+    fx_g.recompile()
 
+    def strip_overloads(gm):
+        """
+        Modifies the target of graph nodes in :attr:`gm` to strip overloads.
+        Args:
+            gm(fx.GraphModule): The input Fx graph module to be modified
+        """
+        for node in gm.graph.nodes:
+            if isinstance(node.target, torch._ops.OpOverload):
+                node.target = node.target.overloadpacket
+        gm.recompile()
+
+    strip_overloads(fx_g)
+
+    ts_g = torch.jit.script(fx_g)
+
+    return ts_g, test_input, actual_out
 ################################################################################
 
 ##################### Torch Vision Models    ###################################

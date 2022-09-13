@@ -1,2 +1,2 @@
-model_name, use_tracing, model_type, dynamic
-bigscience/bloom-350m,True,hf,True
+model_name, use_tracing, model_type, dynamic, param_count, tags, notes
+bigscience/bloom-560m,True,hf,False,560M,"nlp,bloom-variant,transformer-encoder","bigscience bloom 560m"
